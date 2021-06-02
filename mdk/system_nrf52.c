@@ -33,6 +33,8 @@ NOTICE: This file has been modified by Nordic Semiconductor ASA.
 
 #define __SYSTEM_CLOCK_64M      (64000000UL)
 
+#define CONFIG_GPIO_AS_PINRESET 1
+
 
 #if defined ( __CC_ARM )
     uint32_t SystemCoreClock __attribute__((used)) = __SYSTEM_CLOCK_64M;

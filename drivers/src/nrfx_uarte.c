@@ -458,7 +458,8 @@ nrfx_err_t nrfx_uarte_rx(nrfx_uarte_t const * p_instance,
     if (p_cb->handler)
     {
         nrf_uarte_int_disable(p_instance->p_reg, NRF_UARTE_INT_ERROR_MASK |
-                                                 NRF_UARTE_INT_ENDRX_MASK);
+                                                 NRF_UARTE_INT_ENDRX_MASK |
+                                                 NRF_UARTE_INT_RXSTARTED_MASK);
     }
     if (p_cb->rx_buffer_length != 0)
     {
@@ -467,7 +468,8 @@ nrfx_err_t nrfx_uarte_rx(nrfx_uarte_t const * p_instance,
             if (p_cb->handler)
             {
                 nrf_uarte_int_enable(p_instance->p_reg, NRF_UARTE_INT_ERROR_MASK |
-                                                        NRF_UARTE_INT_ENDRX_MASK);
+                                                        NRF_UARTE_INT_ENDRX_MASK |
+                                                        NRF_UARTE_INT_RXSTARTED_MASK);
             }
             err_code = NRFX_ERROR_BUSY;
             NRFX_LOG_WARNING("Function: %s, error code: %s.",
@@ -533,10 +535,16 @@ nrfx_err_t nrfx_uarte_rx(nrfx_uarte_t const * p_instance,
     {
         p_cb->rx_aborted = false;
         nrf_uarte_int_enable(p_instance->p_reg, NRF_UARTE_INT_ERROR_MASK |
-                                                NRF_UARTE_INT_ENDRX_MASK);
+                                                NRF_UARTE_INT_ENDRX_MASK |
+                                                NRF_UARTE_INT_RXSTARTED_MASK);
     }
     NRFX_LOG_INFO("Function: %s, error code: %s.", __func__, NRFX_LOG_ERROR_STRING_GET(err_code));
     return err_code;
+}
+
+void nrfx_uarte_flush(nrfx_uarte_t const * p_instance)
+{
+    nrf_uarte_task_trigger(p_instance->p_reg, NRF_UARTE_TASK_FLUSHRX);
 }
 
 bool nrfx_uarte_rx_ready(nrfx_uarte_t const * p_instance)
@@ -548,6 +556,27 @@ uint32_t nrfx_uarte_errorsrc_get(nrfx_uarte_t const * p_instance)
 {
     nrf_uarte_event_clear(p_instance->p_reg, NRF_UARTE_EVENT_ERROR);
     return nrf_uarte_errorsrc_get_and_clear(p_instance->p_reg);
+}
+
+#define do_passthrough(instance, ctrl_blk, nrf_name, nrfx_name) \
+    if (nrf_uarte_event_check(instance, NRF_UARTE_EVENT_##nrf_name)) {\
+        nrfx_uarte_event_t event;\
+        event.type = NRFX_UARTE_EVT_##nrfx_name;\
+        event.data.rxtx.bytes = 0;\
+        event.data.rxtx.p_data = NULL;\
+        p_cb->handler(&event, ctrl_blk->p_context);\
+        nrf_uarte_event_clear(instance, NRF_UARTE_EVENT_##nrf_name);\
+    }
+
+static void do_passthrough_events(uarte_control_block_t * p_cb,
+                                  NRF_UARTE_Type *        p_uarte)
+{
+    do_passthrough(p_uarte, p_cb, CTS, CTS);
+    do_passthrough(p_uarte, p_cb, NCTS, NO_CTS);
+    do_passthrough(p_uarte, p_cb, RXDRDY, RX_DATA_READY);
+    do_passthrough(p_uarte, p_cb, TXDRDY, TX_DATA_READY);
+    do_passthrough(p_uarte, p_cb, RXSTARTED, RX_STARTED);
+    do_passthrough(p_uarte, p_cb, TXSTARTED, TX_STARTED);
 }
 
 static void rx_done_event(uarte_control_block_t * p_cb,
@@ -626,14 +655,14 @@ static void uarte_irq_handler(NRF_UARTE_Type *        p_uarte,
 
         p_cb->handler(&event, p_cb->p_context);
     }
-    else if (nrf_uarte_event_check(p_uarte, NRF_UARTE_EVENT_ENDRX))
+    if (nrf_uarte_event_check(p_uarte, NRF_UARTE_EVENT_ENDRX))
     {
         nrf_uarte_event_clear(p_uarte, NRF_UARTE_EVENT_ENDRX);
 
         // Aborted transfers are handled in RXTO event processing.
         if (!p_cb->rx_aborted)
         {
-            size_t amount = p_cb->rx_buffer_length;
+            size_t amount = nrf_uarte_rx_amount_get(p_uarte);
             if (p_cb->rx_secondary_buffer_length != 0)
             {
                 uint8_t * p_data = p_cb->p_rx_buffer;
@@ -654,14 +683,15 @@ static void uarte_irq_handler(NRF_UARTE_Type *        p_uarte,
     if (nrf_uarte_event_check(p_uarte, NRF_UARTE_EVENT_RXTO))
     {
         nrf_uarte_event_clear(p_uarte, NRF_UARTE_EVENT_RXTO);
-
-        if (p_cb->rx_buffer_length != 0)
-        {
-            p_cb->rx_buffer_length = 0;
-            // In case of using double-buffered reception both variables storing buffer length
-            // have to be cleared to prevent incorrect behaviour of the driver.
-            p_cb->rx_secondary_buffer_length = 0;
-            rx_done_event(p_cb, nrf_uarte_rx_amount_get(p_uarte), p_cb->p_rx_buffer);
+        if (p_cb->rx_aborted) {
+            if (p_cb->rx_buffer_length != 0)
+            {
+                p_cb->rx_buffer_length = 0;
+                // In case of using double-buffered reception both variables storing buffer length
+                // have to be cleared to prevent incorrect behaviour of the driver.
+                p_cb->rx_secondary_buffer_length = 0;
+                rx_done_event(p_cb, nrf_uarte_rx_amount_get(p_uarte), p_cb->p_rx_buffer);
+            }
         }
     }
 
@@ -687,6 +717,8 @@ static void uarte_irq_handler(NRF_UARTE_Type *        p_uarte,
             tx_done_event(p_cb, nrf_uarte_tx_amount_get(p_uarte));
         }
     }
+
+    do_passthrough_events(p_cb, p_uarte);
 }
 
 #if NRFX_CHECK(NRFX_UARTE0_ENABLED)

@@ -81,9 +81,15 @@ enum {
 /** @brief Types of UARTE driver events. */
 typedef enum
 {
-    NRFX_UARTE_EVT_TX_DONE, ///< Requested TX transfer completed.
-    NRFX_UARTE_EVT_RX_DONE, ///< Requested RX transfer completed.
-    NRFX_UARTE_EVT_ERROR,   ///< Error reported by UART peripheral.
+    NRFX_UARTE_EVT_TX_DONE,       ///< Requested TX transfer completed.
+    NRFX_UARTE_EVT_RX_DONE,       ///< Requested RX transfer completed.
+    NRFX_UARTE_EVT_ERROR,         ///< Error reported by UART peripheral.
+    NRFX_UARTE_EVT_CTS,           ///< CTS is activated.
+    NRFX_UARTE_EVT_NO_CTS,        ///< CTS is deactivated.
+    NRFX_UARTE_EVT_RX_DATA_READY, ///< Data received into FIFO (but potentially not in DataRAM).
+    NRFX_UARTE_EVT_TX_DATA_READY, ///< Data sent out from TXD.
+    NRFX_UARTE_EVT_RX_STARTED,    ///< Receiver has started.
+    NRFX_UARTE_EVT_TX_STARTED,    ///< Transmitter has started.
 } nrfx_uarte_evt_type_t;
 
 /** @brief Structure for the UARTE configuration. */
@@ -367,6 +373,8 @@ void nrfx_uarte_rx_abort(nrfx_uarte_t const * p_instance);
  * @return Mask of reported errors.
  */
 uint32_t nrfx_uarte_errorsrc_get(nrfx_uarte_t const * p_instance);
+
+void nrfx_uarte_flush(nrfx_uarte_t const * p_instance);
 
 
 #ifndef NRFX_DECLARE_ONLY
