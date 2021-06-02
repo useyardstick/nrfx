@@ -28,11 +28,7 @@ INCL_DIRS = -I$(CONFIG_DIR) \
 			-Idrivers/include\
 			-I$(CMSIS_DIR)
 
-CFLAGS = -std=c99 -Og -ggdb $(ARCH_CPU) -D$(NRF_CPU)
-# enable the FPU
-CFLAGS += -mfloat-abi=softfp -mfpu=fpv4-sp-d16 -mthumb -DARM_MATH_CM4
-# enable pins 9 and 10 as gpio
-CFLAGS += -DCONFIG_NFCT_PINS_AS_GPIOS
+CFLAGS = -std=c99 -ggdb $(ARCH_CPU) -D$(NRF_CPU) -mfloat-abi=softfp -mfpu=fpv4-sp-d16 -mthumb -DARM_MATH_CM4 -Og
 
 %.o: %.c $(CONFIGS)
 	$(CC) $(CFLAGS) $(INCL_DIRS) -o $@ -c $<
